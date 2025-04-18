@@ -1,193 +1,139 @@
 import wx
 import wx.adv
-import os
 import time
 import threading
-from datetime import datetime
-import shutil  # 用于文件操作
+import os
+from fpdf import FPDF  # 示例中用伪代码模拟PDF读取和翻译
 
-class PDFTranslatorApp(wx.Frame):
+class PDFTranslatorGUI(wx.Frame):
     def __init__(self):
-        super().__init__(None, title="PDF翻译工具", size=(700, 500))
+        super().__init__(parent=None, title="PDF翻译工具", size=(600, 600))  # 增大窗口高度以容纳日志区域
         
-        # 初始化变量
-        self.translation_active = False
-        self.translation_thread = None
-        self.log_messages = []
-        
-        # 创建UI
+        # 初始化UI
         self.init_ui()
-        self.Centre()
+        self.translation_thread = None
+        self.stop_translation = False
         
     def init_ui(self):
         panel = wx.Panel(self)
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        vbox = wx.BoxSizer(wx.VERTICAL)
         
-        # 1. PDF路径输入区域
-        path_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        lbl_pdf = wx.StaticText(panel, label="PDF文件路径:")
-        self.txt_pdf = wx.TextCtrl(panel, size=(300, -1))
+        # 1. PDF路径输入框
+        hbox1 = wx.BoxSizer(wx.HORIZONTAL)
+        lbl_pdf = wx.StaticText(panel, label="PDF绝对路径:")
+        self.txt_pdf = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
         btn_browse = wx.Button(panel, label="浏览...")
         
-        path_sizer.Add(lbl_pdf, 0, wx.ALIGN_CENTER|wx.ALL, 5)
-        path_sizer.Add(self.txt_pdf, 1, wx.EXPAND|wx.ALL, 5)
-        path_sizer.Add(btn_browse, 0, wx.ALL, 5)
-        main_sizer.Add(path_sizer, 0, wx.EXPAND|wx.ALL, 10)
+        hbox1.Add(lbl_pdf, flag=wx.RIGHT, border=8)
+        hbox1.Add(self.txt_pdf, proportion=1, flag=wx.EXPAND)
+        hbox1.Add(btn_browse, flag=wx.LEFT, border=8)
+        vbox.Add(hbox1, flag=wx.EXPAND|wx.ALL, border=10)
         
         # 2. 翻译按钮
-        self.btn_translate = wx.Button(panel, label="翻译", size=(100, 40))
-        main_sizer.Add(self.btn_translate, 0, wx.ALIGN_CENTER|wx.ALL, 10)
+        self.btn_translate = wx.Button(panel, label="翻译")
+        vbox.Add(self.btn_translate, flag=wx.EXPAND|wx.LEFT|wx.RIGHT|wx.BOTTOM, border=10)
         
-        # 3. 状态显示
-        self.txt_status = wx.TextCtrl(panel, style=wx.TE_READONLY|wx.TE_CENTER)
-        self.txt_status.SetBackgroundColour(wx.Colour(240, 240, 240))
-        self.txt_status.SetValue("等待开始翻译...")
-        main_sizer.Add(self.txt_status, 0, wx.EXPAND|wx.LEFT|wx.RIGHT, 10)
+        # 3. 状态显示文本框
+        self.txt_status = wx.TextCtrl(panel, style=wx.TE_MULTILINE|wx.TE_READONLY)
+        vbox.Add(self.txt_status, proportion=0, flag=wx.EXPAND|wx.LEFT|wx.RIGHT, border=10)
         
-        # 4. 可折叠日志面板
-        self.collapse_pane = wx.CollapsiblePane(panel, label="翻译日志 ▼", style=wx.CP_DEFAULT_STYLE|wx.CP_NO_TLW_RESIZE)
-        main_sizer.Add(self.collapse_pane, 1, wx.EXPAND|wx.ALL, 10)
+        # 4. 可折叠的日志区域
+        self.collapse_panel = wx.CollapsiblePane(panel, label="翻译日志", style=wx.CP_DEFAULT_STYLE)
+        vbox.Add(self.collapse_panel, proportion=1, flag=wx.EXPAND|wx.ALL, border=10)
         
         # 日志内容
-        pane_window = self.collapse_pane.GetPane()
+        pane_content = self.collapse_panel.GetPane()
         log_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.txt_log = wx.TextCtrl(pane_window, style=wx.TE_MULTILINE|wx.TE_READONLY|wx.HSCROLL)
-        log_sizer.Add(self.txt_log, 1, wx.EXPAND)
-        pane_window.SetSizer(log_sizer)
+        self.txt_log = wx.TextCtrl(pane_content, style=wx.TE_MULTILINE|wx.TE_READONLY|wx.TE_RICH2)
+        log_sizer.Add(self.txt_log, proportion=1, flag=wx.EXPAND)
+        pane_content.SetSizer(log_sizer)
+        
+        # 展开日志区域
+        self.collapse_panel.Collapse(False)  # 默认展开日志区域
         
         # 事件绑定
         btn_browse.Bind(wx.EVT_BUTTON, self.on_browse)
         self.btn_translate.Bind(wx.EVT_BUTTON, self.on_translate)
-        self.collapse_pane.Bind(wx.EVT_COLLAPSIBLEPANE_CHANGED, self.on_pane_changed)
         
-        panel.SetSizer(main_sizer)
-        
-        # 定时器用于日志更新
-        self.timer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.update_log, self.timer)
+        panel.SetSizer(vbox)
         
     def on_browse(self, event):
         """选择PDF文件"""
         wildcard = "PDF文件 (*.pdf)|*.pdf"
         dialog = wx.FileDialog(self, "选择PDF文件", wildcard=wildcard, style=wx.FD_OPEN)
-        
         if dialog.ShowModal() == wx.ID_OK:
             self.txt_pdf.SetValue(dialog.GetPath())
         dialog.Destroy()
     
     def on_translate(self, event):
-        """开始/停止翻译"""
+        """启动/停止翻译线程"""
         pdf_path = self.txt_pdf.GetValue()
         
-        if not pdf_path or not os.path.isfile(pdf_path):
+        if not os.path.isfile(pdf_path):
             wx.MessageBox("请选择有效的PDF文件！", "错误", wx.OK|wx.ICON_ERROR)
             return
             
-        if self.translation_active:
-            # 停止翻译
-            self.translation_active = False
+        if self.translation_thread and self.translation_thread.is_alive():
+            self.stop_translation = True
             self.btn_translate.SetLabel("翻译")
-            self.append_log("用户手动停止翻译")
+            self.update_status("用户手动停止翻译")
         else:
-            # 开始翻译
-            self.translation_active = True
+            self.stop_translation = False
             self.btn_translate.SetLabel("停止")
-            self.txt_status.SetValue("正在翻译...")
+            self.txt_status.Clear()
             self.txt_log.Clear()
+            self.update_status("开始翻译...")
             
             # 启动翻译线程
             self.translation_thread = threading.Thread(
-                target=self.do_translation,
+                target=self.do_translation, 
                 args=(pdf_path,),
                 daemon=True
             )
             self.translation_thread.start()
-            
-            # 启动日志定时器 (每500ms更新)
-            self.timer.Start(500)
     
     def do_translation(self, pdf_path):
-        """模拟翻译过程"""
+        """模拟翻译过程（需替换为实际PDF解析和翻译逻辑）"""
         try:
-            # 获取桌面路径并创建输出文件
-            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-            output_filename = f"translated_{os.path.basename(pdf_path)}"
-            output_path = os.path.join(desktop, output_filename)
-            
-            # 模拟PDF信息
-            total_pages = 10
-            self.append_log(f"开始翻译: {pdf_path}")
+            # 示例：模拟读取PDF页数
+            total_pages = 10  # 假设PDF有10页
+            self.append_log(f"加载PDF成功: {pdf_path}")
             self.append_log(f"总页数: {total_pages}")
-            self.append_log(f"输出将保存到: {output_path}")
             
             for page in range(1, total_pages + 1):
-                if not self.translation_active:
+                if self.stop_translation:
                     break
+                    
+                # 模拟翻译每页
+                time.sleep(0.5)  # 模拟处理延迟
+                self.append_log(f"正在翻译第 {page}/{total_pages} 页...")
+                self.update_status(f"进度: {page}/{total_pages}")
                 
-                # 模拟翻译延迟
-                time.sleep(0.8)
-                
-                # 更新日志
-                log_msg = f"{datetime.now().strftime('%H:%M:%S')} - 正在翻译第 {page}/{total_pages} 页"
-                self.log_messages.append(log_msg)
-                
-                # 模拟进度
-                wx.CallAfter(self.txt_status.SetValue, f"进度: {page}/{total_pages}")
+                # 这里替换为实际PDF解析和翻译代码
+                # 例如：
+                # text = extract_text_from_pdf(pdf_path, page)
+                # translation = translate_text(text)
+                # save_translation(translation)
             
-            if self.translation_active:
-                # 模拟文件保存
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write("这是模拟的翻译内容")
-                
-                wx.CallAfter(self.txt_status.SetValue, "翻译完成！")
-                self.append_log(f"翻译完成！文件已保存到: {output_path}")
-                self.append_log("--------------------------------")
-                
-                # 打开桌面文件夹
-                os.startfile(desktop)
-        
+            if not self.stop_translation:
+                self.update_status("翻译完成！")
+                wx.CallAfter(self.btn_translate.SetLabel, "翻译")
         except Exception as e:
             self.append_log(f"错误: {str(e)}")
-            wx.CallAfter(self.txt_status.SetValue, "翻译出错！")
-        finally:
-            wx.CallAfter(self.btn_translate.SetLabel, "翻译")
-            self.translation_active = False
-            self.timer.Stop()
+            self.update_status("翻译失败！")
     
-    def update_log(self, event):
-        """定时更新日志内容"""
-        if self.log_messages:
-            self.txt_log.AppendText("\n".join(self.log_messages) + "\n")
-            self.log_messages = []
-            self.txt_log.ShowPosition(self.txt_log.GetLastPosition())
+    def update_status(self, message):
+        """更新状态文本框"""
+        wx.CallAfter(self.txt_status.SetValue, message)
     
     def append_log(self, message):
-        """添加日志消息"""
-        self.log_messages.append(message)
-    
-    def on_pane_changed(self, event):
-        """折叠面板状态改变时更新标题"""
-        pane = event.GetEventObject()
-        if pane.IsExpanded():
-            pane.SetLabel("翻译日志 ▼")
-        else:
-            pane.SetLabel("翻译日志 ▲")
+        """添加日志（线程安全）"""
+        wx.CallAfter(self.txt_log.AppendText, f"{message}\n")
 
 if __name__ == "__main__":
     app = wx.App(False)
-    frame = PDFTranslatorApp()
+    frame = PDFTranslatorGUI()
     frame.Show()
     app.MainLoop()
 
 
-#实际应用需替换的部分
-# 替换为实际的PDF解析和翻译代码：
-# 1. 使用PyPDF2或pdfplumber提取文本
-# from PyPDF2 import PdfReader
-# reader = PdfReader(pdf_path)
-# text = reader.pages[page].extract_text()
-
-# 2. 调用翻译API（如Google Translate）
-# from googletrans import Translator
-# translator = Translator()
-# translation = translator.translate(text, dest='zh-cn').text
