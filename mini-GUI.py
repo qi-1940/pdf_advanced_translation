@@ -3,7 +3,8 @@ import wx.adv
 import time
 import threading
 import os
-from fpdf import FPDF  # 示例中用伪代码模拟PDF读取和翻译
+#from fpdf import FPDF  # 示例中用伪代码模拟PDF读取和翻译
+from translation import translate_pdf
 
 class PDFTranslatorGUI(wx.Frame):
     def __init__(self):
@@ -114,8 +115,9 @@ class PDFTranslatorGUI(wx.Frame):
                 # text = extract_text_from_pdf(pdf_path, page)
                 # translation = translate_text(text)
                 # save_translation(translation)
+                
             
-            if not self.stop_translation:
+            if translate_pdf(pdf_path) == 1:
                 self.update_status("翻译完成！")
                 wx.CallAfter(self.btn_translate.SetLabel, "翻译")
         except Exception as e:
@@ -135,5 +137,3 @@ if __name__ == "__main__":
     frame = PDFTranslatorGUI()
     frame.Show()
     app.MainLoop()
-
-
