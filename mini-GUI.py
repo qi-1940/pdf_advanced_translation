@@ -95,34 +95,13 @@ class PDFTranslatorGUI(wx.Frame):
     
     def do_translation(self, pdf_path):
         """模拟翻译过程（需替换为实际PDF解析和翻译逻辑）"""
-        try:
-            # 示例：模拟读取PDF页数
-            total_pages = 10  # 假设PDF有10页
-            self.append_log(f"加载PDF成功: {pdf_path}")
-            self.append_log(f"总页数: {total_pages}")
-            
-            for page in range(1, total_pages + 1):
-                if self.stop_translation:
-                    break
-                    
-                # 模拟翻译每页
-                time.sleep(0.5)  # 模拟处理延迟
-                self.append_log(f"正在翻译第 {page}/{total_pages} 页...")
-                self.update_status(f"进度: {page}/{total_pages}")
-                
-                # 这里替换为实际PDF解析和翻译代码
-                # 例如：
-                # text = extract_text_from_pdf(pdf_path, page)
-                # translation = translate_text(text)
-                # save_translation(translation)
-                
-            
-            if translate_pdf(pdf_path) == 1:
-                self.update_status("翻译完成！")
-                wx.CallAfter(self.btn_translate.SetLabel, "翻译")
-        except Exception as e:
-            self.append_log(f"错误: {str(e)}")
-            self.update_status("翻译失败！")
+        #try:
+        if translate_pdf(pdf_path) == 1:
+            self.update_status("翻译完成！")
+            wx.CallAfter(self.btn_translate.SetLabel, "翻译")
+        #except Exception as e:
+        #    self.append_log(f"错误: {str(e)}")
+        #    self.update_status("翻译失败！")
     
     def update_status(self, message):
         """更新状态文本框"""

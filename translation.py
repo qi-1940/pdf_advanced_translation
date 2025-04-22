@@ -12,9 +12,9 @@ import requests
 import time
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
-import pymupdf # imports the pymupdf library
+import pymupdf 
 import os
+pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
 
 def txt_to_pdf(txt_path, pdf_path):
     # 创建PDF画布
@@ -64,38 +64,80 @@ def baidu_translate(query):
     # Build request
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     # Send request
-    r = requests.post(url, params, headers=headers)
-    result1 = r.json()
+    r = requests.post(url, params, headers=headers).json()
     # Show response
-    return result1['trans_result']
+    return r['trans_result']
+
+def to_sentences(query):
+    #接受的参数query是字符串，函数要返回一个列表，列表里的每个元素都是一个完整的英文句子,句子的开头必须是英文字母
+    #删除所有的换行符
+    sentences_list=[]
+    char_list=[]
+    is_begin_of_a_sentence=1
+    chars=iter(query)
+    while(1):
+        try:
+            every_char=next(chars)
+            if every_char=='.' or every_char=='!' or every_char=='?':
+                char_list.append(every_char)
+                sentences_list.append(''.join(char_list))
+                char_list=[]
+                is_begin_of_a_sentence=1
+            else:
+                while((is_begin_of_a_sentence==1 and every_char==' ') or every_char=='\n'):
+                    every_char=next(chars)
+                char_list.append(every_char)
+                is_begin_of_a_sentence=0
+        except StopIteration:
+            break
+    return sentences_list
+
+def to_same_row_length_sentences(list_of_sentences):
+    #参数是一个列表，里面有若干句子（中文字符串），它们长度不一
+    #输出一个列表，里面存储的也是这些句子，但列表的元素的长度一致，为40
+    same_row_length_sentences=[]
+    current_length=0
+    for temp_sentence in list_of_sentences:
+        temp_sentence_length=len(temp_sentence)
+        if temp_sentence_length+current_length<=40:
+            same_row_length_sentences.append(temp_sentence)
+            current_length+=temp_sentence_length
+        else:
+            while(temp_sentence_length+current_length>40):
+                current_row_space=40-current_length
+                temp_sentence_front_part=temp_sentence[:current_row_space]
+                temp_sentence_back_part=temp_sentence[current_row_space:]
+                same_row_length_sentences.append(temp_sentence_front_part)
+                same_row_length_sentences.append("\n")
+                current_length=0
+                temp_sentence=temp_sentence_back_part
+                temp_sentence_length=len(temp_sentence)
+            same_row_length_sentences.append(temp_sentence)
+            current_length+=temp_sentence_length
+    return same_row_length_sentences
 
 def translate_pdf(pdf_path):
-    # 保存原始输出对象
-    original_stdout = sys.stdout  
 
-    #打开输入的pdf文件
-    doc = pymupdf.open(pdf_path)
+    original_stdout = sys.stdout  # 保存原始输出对象
+
+    doc = pymupdf.open(pdf_path)#打开输入的pdf文件
+
     with open('output.txt', 'w') as f:
         sys.stdout = f  # 重定向到文件
-
         for page in doc: # iterate the document pages
-            query = page.get_text() # get plain text encoded as UTF-8
-            translated_text = baidu_translate(query)
-            for row in translated_text:
-                print(row['dst'])
-                print('\n')
-
+            query = page.get_text() # get plain text
+            temp_page_gross_sentences=[]#存储整个页面所有句子的翻译
+            for each_sentence in to_sentences(query):
+                temp_page_gross_sentences.append(baidu_translate(each_sentence)[0]['dst'])
+            print(''.join(to_same_row_length_sentences(temp_page_gross_sentences)))
         doc.close()
+    
+    sys.stdout = original_stdout  # 恢复标准输出
+    
+    txt_to_pdf("output.txt", f"中文翻译版{pdf_path}")#生成pdf输出文件
 
-    # 恢复标准输出
-    sys.stdout = original_stdout  
-
-    #生成pdf输出文件
-    txt_to_pdf("output.txt", "output.pdf")
-
-    if os.path.isfile("output.pdf"):
+    if os.path.isfile(f"中文翻译版{pdf_path}"):
         os.remove('output.txt')
         return 1
     else:
         return 0
-    
