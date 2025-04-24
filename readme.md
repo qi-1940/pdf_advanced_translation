@@ -16,6 +16,9 @@ test.py能用，mini-GUI.py不能用，待解决。
 commit 2：
 清理了目录，将plan.txt和readme.txt合并为readme.md，以后专注于这个文件。
 
+commit 3:
+暂时补住漏洞
+
 以下是留言
 
 MXH：第一次计划全文
