@@ -134,9 +134,9 @@ def translate_pdf(pdf_path):
     
     sys.stdout = original_stdout  # 恢复标准输出
     
-    txt_to_pdf("output.txt", f"中文翻译版{pdf_path}")#生成pdf输出文件
+    txt_to_pdf("output.txt", f"{pdf_path}中文翻译版.pdf")#生成pdf输出文件
 
-    if os.path.isfile(f"中文翻译版{pdf_path}"):
+    if os.path.isfile(f"{pdf_path}中文翻译版.pdf"):
         os.remove('output.txt')
         return 1
     else:
