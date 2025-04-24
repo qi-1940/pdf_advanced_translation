@@ -25,7 +25,7 @@ def txt_to_pdf(txt_path, pdf_path):
     c.setFont("STSong-Light", 12)
     
     # 读取文本内容
-    with open(txt_path, "r", encoding="utf-8") as f:
+    with open(txt_path, "r",encoding='utf-8') as f:
         lines = f.readlines()
     
     # 初始化坐标和行距
