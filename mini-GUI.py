@@ -21,7 +21,7 @@ class PDFTranslatorGUI(wx.Frame):
         
         # 1. PDF路径输入框
         hbox1 = wx.BoxSizer(wx.HORIZONTAL)
-        lbl_pdf = wx.StaticText(panel, label="PDF绝对路径:")
+        lbl_pdf = wx.StaticText(panel, label="PDF路径:")
         self.txt_pdf = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
         btn_browse = wx.Button(panel, label="浏览...")
         
@@ -38,24 +38,20 @@ class PDFTranslatorGUI(wx.Frame):
         self.txt_status = wx.TextCtrl(panel, style=wx.TE_MULTILINE|wx.TE_READONLY)
         vbox.Add(self.txt_status, proportion=0, flag=wx.EXPAND|wx.LEFT|wx.RIGHT, border=10)
         
-        # 4. 可折叠的日志区域
-        self.collapse_panel = wx.CollapsiblePane(panel, label="翻译日志", style=wx.CP_DEFAULT_STYLE)
-        vbox.Add(self.collapse_panel, proportion=1, flag=wx.EXPAND|wx.ALL, border=10)
+        # 4. 日志区域
+         #self.collapse_panel = wx.CollapsiblePane(panel, label="翻译日志", style=wx.CP_DEFAULT_STYLE)
+         #vbox.Add(self.collapse_panel, proportion=1, flag=wx.EXPAND|wx.ALL, border=10)
+        lbl_log = wx.StaticText(panel, label="翻译日志:")
+        vbox.Add(lbl_log, flag=wx.LEFT|wx.TOP, border=10)
         
-        # 日志内容
-        pane_content = self.collapse_panel.GetPane()
-        log_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.txt_log = wx.TextCtrl(pane_content, style=wx.TE_MULTILINE|wx.TE_READONLY|wx.TE_RICH2)
-        log_sizer.Add(self.txt_log, proportion=1, flag=wx.EXPAND)
-        pane_content.SetSizer(log_sizer)
+        self.txt_log = wx.TextCtrl(panel, style=wx.TE_MULTILINE|wx.TE_READONLY|wx.TE_RICH2)
+        vbox.Add(self.txt_log, proportion=1, flag=wx.EXPAND|wx.ALL, border=10)
         
-        # 展开日志区域
-        self.collapse_panel.Collapse(False)  # 默认展开日志区域
-        
+              
         # 事件绑定
         btn_browse.Bind(wx.EVT_BUTTON, self.on_browse)
         self.btn_translate.Bind(wx.EVT_BUTTON, self.on_translate)
-        
+      
         panel.SetSizer(vbox)
         
     def on_browse(self, event):
@@ -68,7 +64,14 @@ class PDFTranslatorGUI(wx.Frame):
     
     def on_translate(self, event):
         """启动/停止翻译线程"""
-        pdf_path = self.txt_pdf.GetValue()
+        absolute_pdf_path = self.txt_pdf.GetValue()
+
+          # 检查文件是否存在
+        if not os.path.isfile(absolute_pdf_path):
+         wx.MessageBox("请选择有效的PDF文件！", "错误", wx.OK | wx.ICON_ERROR)
+         return
+       # 将绝对路径转换为相对路径
+        pdf_path = os.path.relpath(absolute_pdf_path)
         
         if not os.path.isfile(pdf_path):
             wx.MessageBox("请选择有效的PDF文件！", "错误", wx.OK|wx.ICON_ERROR)
@@ -96,20 +99,49 @@ class PDFTranslatorGUI(wx.Frame):
     def do_translation(self, pdf_path):
         """模拟翻译过程（需替换为实际PDF解析和翻译逻辑）"""
         #try:
-        if translate_pdf(pdf_path) == 1:
-            self.update_status("翻译完成！")
-            wx.CallAfter(self.btn_translate.SetLabel, "翻译")
+        #if translate_pdf(pdf_path) != None:
+        #wx.CallAfter(self.btn_translate.SetLabel, "翻译")
         #except Exception as e:
         #    self.append_log(f"错误: {str(e)}")
         #    self.update_status("翻译失败！")
+         # ===== 修改标记1：获取并显示翻译后路径 =====
+       # 获取翻译后的文本内容
+        translated_text = translate_pdf(pdf_path)
+        
+        if translated_text:  # 如果翻译成功
+            # ===== 关键修改：生成绝对路径 =====
+            # 获取原始文件的目录和基本名
+            dir_path = os.path.dirname(os.path.abspath(pdf_path))
+            base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+            
+            # 构建输出文件名（保持命名格式）
+            output_name = f"{base_name}-中文翻译版.pdf"
+            
+            # 组合完整绝对路径
+            translated_path = os.path.join(dir_path, output_name)         #---------------------------------直接获取路径
+
+        if translated_path:  # 翻译成功
+            self.update_status("翻译完成！")
+            self.append_log(f"翻译文件已保存至: {translated_path}")  # 在日志中显示完整路径
+            wx.CallAfter(self.btn_translate.SetLabel, "翻译")
+        else:  # 翻译失败
+            self.update_status("翻译失败！")
+            self.append_log("错误: 无法生成翻译文件")
+        # ===== 修改结束 ====
     
     def update_status(self, message):
         """更新状态文本框"""
         wx.CallAfter(self.txt_status.SetValue, message)
     
     def append_log(self, message):
-        """添加日志（线程安全）"""
-        wx.CallAfter(self.txt_log.AppendText, f"{message}\n")
+       # """添加日志（线程安全）"""
+       # wx.CallAfter(self.txt_log.AppendText, f"{message}\n")
+        # ===== 修改开始：添加时间戳并优化显示 =====
+        timestamp = time.strftime("%H:%M:%S")
+        log_message = f"[{timestamp}] {message}\n"
+        wx.CallAfter(self.txt_log.AppendText, log_message)
+        # ===== 修改结束 =====
+
 
 if __name__ == "__main__":
     app = wx.App(False)
