@@ -116,28 +116,40 @@ def to_same_row_length_sentences(list_of_sentences):
             current_length+=temp_sentence_length
     return same_row_length_sentences
 
-def translate_pdf(pdf_path):
+def to_plain_block(block):
+    plain_block=''
+    for every_char in block:
+        if(every_char != '\n'):
+            plain_block+=every_char
+    return plain_block
 
-    original_stdout = sys.stdout  # 保存原始输出对象
+def make_sentence_short(long_sentence):
+    """参数是一个长字符串，返回也是一个长，这个函数会在每40个字符处添加一个换行符
+    ，同时会在最末加一个换行符"""
+    short_sentence=''
+    size=len(long_sentence)
+    rows_num=(int)(size/40)
+    for i in rows_num:
+        short_sentence+=long_sentence[i:i+40]
+        short_sentence+='\n'
+    short_sentence+=long_sentence[i+40:]
+    short_sentence+='\n'
+    return short_sentence
 
-    doc = pymupdf.open(pdf_path)#打开输入的pdf文件
+def translate_pdf(input_pdf_path):
+    with pymupdf.open(input_pdf_path) as input_pdf:#打开输入的pdf文件
+        with open('output.txt', 'w',encoding='utf-8') as output_txt:
+            for input_pdf_page in input_pdf: # iterate the document pages
+                page_blocks = input_pdf_page.get_text('blocks') # get blocks
+                for each_block in page_blocks:
+                    block_tran=baidu_translate(to_plain_block(each_block[4]))[0]['dst']
+                    output_txt.write(make_sentence_short(block_tran))
 
-    with open('output.txt', 'w') as f:
-        sys.stdout = f  # 重定向到文件
-        for page in doc: # iterate the document pages
-            query = page.get_text() # get plain text
-            temp_page_gross_sentences=[]#存储整个页面所有句子的翻译
-            for each_sentence in to_sentences(query):
-                temp_page_gross_sentences.append(baidu_translate(each_sentence)[0]['dst'])
-            print(''.join(to_same_row_length_sentences(temp_page_gross_sentences)))
-        doc.close()
-    
-    sys.stdout = original_stdout  # 恢复标准输出
-    
-    txt_to_pdf("output.txt", f"{pdf_path}中文翻译版.pdf")#生成pdf输出文件
+                
+    txt_to_pdf("output.txt", f"{input_pdf_path}-中文翻译版.pdf")#生成pdf输出文件
 
-    if os.path.isfile(f"{pdf_path}中文翻译版.pdf"):
-        os.remove('output.txt')
+    if os.path.isfile(f"{input_pdf_path}-中文翻译版.pdf"):
+        #os.remove('output.txt')
         return 1
     else:
         return 0
