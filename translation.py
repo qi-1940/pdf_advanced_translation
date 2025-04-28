@@ -25,7 +25,7 @@ def txt_to_pdf(txt_path, pdf_path):
     c.setFont("STSong-Light", 12)
     
     # 读取文本内容
-    with open(txt_path, "r",encoding='gbk') as f:
+    with open(txt_path, "r",encoding='utf-8') as f:
         lines = f.readlines()
     
     # 初始化坐标和行距
@@ -124,16 +124,23 @@ def to_plain_block(block):
     return plain_block
 
 def make_sentence_short(long_sentence):
-    """参数是一个长字符串，返回也是一个长，这个函数会在每40个字符处添加一个换行符
+    """参数是一个长字符串，返回也是一个长字符串，
+    这个函数会在每40个字符处添加一个换行符
     ，同时会在最末加一个换行符"""
     short_sentence=''
     size=len(long_sentence)
-    rows_num=(int)(size/40)
-    for i in rows_num:
-        short_sentence+=long_sentence[i:i+40]
+    rows_num=(int)(size/40)#有几个整的行
+    num_of_enter=0
+    has_been_add_a_enter=0
+    for i in range(rows_num):
+        short_sentence+=long_sentence[i*40:i*40+40]
+        has_been_add_a_enter=0
         short_sentence+='\n'
-    short_sentence+=long_sentence[i+40:]
-    short_sentence+='\n'
+        has_been_add_a_enter=1
+        num_of_enter+=1
+    if long_sentence[rows_num*40:]!='':
+        short_sentence+=long_sentence[rows_num*40:]
+        short_sentence+='\n'
     return short_sentence
 
 def translate_pdf(input_pdf_path):
@@ -143,6 +150,8 @@ def translate_pdf(input_pdf_path):
                 page_blocks = input_pdf_page.get_text('blocks') # get blocks
                 for each_block in page_blocks:
                     block_tran=baidu_translate(to_plain_block(each_block[4]))[0]['dst']
+                    #output_txt.write(block_tran)
+                    #output_txt.write('\n********************\n')
                     output_txt.write(make_sentence_short(block_tran))
 
                 
