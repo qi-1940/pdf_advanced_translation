@@ -25,6 +25,7 @@ commit 4:
 commit 5:
 翻译日志显示问题解决，返回翻译文件的绝对路径，给出要翻译文件的相对路径
 
+
 以下是留言
 
 MXH：第一次计划全文
@@ -55,3 +56,5 @@ JH发现的问题2025.4.24
 2.MXH（类Linux系统）在运行 open()函数时编译转换使用'gbk'发生错误，使用'utf-8'时正常运行
 （JH怀疑是Windows和Linux系统对'utf-8'和'gbk'的定义不一样。）
 
+标签类型：abandon,title,table_caption,table,figure,figure_caption,plain text,
+----5.13
