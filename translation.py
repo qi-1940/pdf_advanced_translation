@@ -4,45 +4,14 @@
 #如果翻译成功，返回1，否则返回0
 
 import sys
-from reportlab.pdfgen import canvas
 import hashlib
 import hmac
 import json
 import requests
 import time
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-import pymupdf 
+import fitz 
 import os
-pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
-
-def txt_to_pdf(txt_path, pdf_path):
-    # 创建PDF画布
-    c = canvas.Canvas(pdf_path, pagesize=(595.27, 841.89))# A4 pagesize
-    height = 841.89
-    
-    # 设置字体和字号
-    c.setFont("STSong-Light", 12)
-    
-    # 读取文本内容
-    with open(txt_path, "r",encoding='utf-8') as f:
-        lines = f.readlines()
-    
-    # 初始化坐标和行距
-    y = height - 40  # 起始位置距离顶部40单位
-    line_height = 15  # 行间距
-    
-    # 逐行写入PDF
-    for line in lines:
-        if y < 40:  # 页底留白40单位时换页
-            c.showPage()
-            c.setFont("STSong-Light", 12)
-            y = height - 40
-        c.drawString(40, y, line.strip())
-        y -= line_height
-    
-    # 保存PDF
-    c.save()
+from ai2 import ai_blocks
 
 def baidu_translate(query):
     app_id = '20250415002334058'
@@ -68,54 +37,6 @@ def baidu_translate(query):
     # Show response
     return r['trans_result']
 
-def to_sentences(query):
-    #接受的参数query是字符串，函数要返回一个列表，列表里的每个元素都是一个完整的英文句子,句子的开头必须是英文字母
-    #删除所有的换行符
-    sentences_list=[]
-    char_list=[]
-    is_begin_of_a_sentence=1
-    chars=iter(query)
-    while(1):
-        try:
-            every_char=next(chars)
-            if every_char=='.' or every_char=='!' or every_char=='?':
-                char_list.append(every_char)
-                sentences_list.append(''.join(char_list))
-                char_list=[]
-                is_begin_of_a_sentence=1
-            else:
-                while((is_begin_of_a_sentence==1 and every_char==' ') or every_char=='\n'):
-                    every_char=next(chars)
-                char_list.append(every_char)
-                is_begin_of_a_sentence=0
-        except StopIteration:
-            break
-    return sentences_list
-
-def to_same_row_length_sentences(list_of_sentences):
-    #参数是一个列表，里面有若干句子（中文字符串），它们长度不一
-    #输出一个列表，里面存储的也是这些句子，但列表的元素的长度一致，为40
-    same_row_length_sentences=[]
-    current_length=0
-    for temp_sentence in list_of_sentences:
-        temp_sentence_length=len(temp_sentence)
-        if temp_sentence_length+current_length<=40:
-            same_row_length_sentences.append(temp_sentence)
-            current_length+=temp_sentence_length
-        else:
-            while(temp_sentence_length+current_length>40):
-                current_row_space=40-current_length
-                temp_sentence_front_part=temp_sentence[:current_row_space]
-                temp_sentence_back_part=temp_sentence[current_row_space:]
-                same_row_length_sentences.append(temp_sentence_front_part)
-                same_row_length_sentences.append("\n")
-                current_length=0
-                temp_sentence=temp_sentence_back_part
-                temp_sentence_length=len(temp_sentence)
-            same_row_length_sentences.append(temp_sentence)
-            current_length+=temp_sentence_length
-    return same_row_length_sentences
-
 def to_plain_block(block):
     plain_block=''
     for every_char in block:
@@ -123,42 +44,77 @@ def to_plain_block(block):
             plain_block+=every_char
     return plain_block
 
-def make_sentence_short(long_sentence):
-    """参数是一个长字符串，返回也是一个长字符串，
-    这个函数会在每40个字符处添加一个换行符
-    ，同时会在最末加一个换行符"""
-    short_sentence=''
-    size=len(long_sentence)
-    rows_num=(int)(size/40)#有几个整的行
-    num_of_enter=0
-    has_been_add_a_enter=0
-    for i in range(rows_num):
-        short_sentence+=long_sentence[i*40:i*40+40]
-        has_been_add_a_enter=0
-        short_sentence+='\n'
-        has_been_add_a_enter=1
-        num_of_enter+=1
-    if long_sentence[rows_num*40:]!='':
-        short_sentence+=long_sentence[rows_num*40:]
-        short_sentence+='\n'
-    return short_sentence
+def is_english_letter(char):
+    return len(char) == 1 and char.isalpha() and char.isascii()
 
-def translate_pdf(input_pdf_path):
-    with pymupdf.open(input_pdf_path) as input_pdf:#打开输入的pdf文件
-        with open('output.txt', 'w',encoding='utf-8') as output_txt:
-            for input_pdf_page in input_pdf: # iterate the document pages
-                page_blocks = input_pdf_page.get_text('blocks') # get blocks
-                for each_block in page_blocks:
-                    block_tran=baidu_translate(to_plain_block(each_block[4]))[0]['dst']
-                    #output_txt.write(block_tran)
-                    #output_txt.write('\n********************\n')
-                    output_txt.write(make_sentence_short(block_tran))
-
-                
-    txt_to_pdf("output.txt", f"{input_pdf_path}-中文翻译版.pdf")#生成pdf输出文件
-
-    if os.path.isfile(f"{input_pdf_path}-中文翻译版.pdf"):
-        #os.remove('output.txt')
+def is_close(float1,float2):
+    if abs(float1-float2)<=10:
         return 1
-    else:
-        return 0
+    return 0
+
+def bbox_transform(bbox,x,y):
+    bbox[0] = bbox[0]*x
+    bbox[2] = bbox[2]*x
+    bbox[1] = bbox[1]*y
+    bbox[3] = bbox[3]*y
+    return bbox
+    
+def translate_pdf_ai(input_pdf_path):
+    with fitz.open(input_pdf_path) as input_pdf:
+        output_pdf=fitz.Document()
+        for input_pdf_page in input_pdf:
+            
+            #获取当前页面的宽度和高度
+            input_pdf_page_width = input_pdf_page.rect.width  # 获取宽度（点）
+            input_pdf_page_height = input_pdf_page.rect.height  # 获取高度（点）
+            
+            #在要输出的文档中添加页面
+            output_pdf_current_page=output_pdf.new_page(width=input_pdf_page_width, height=input_pdf_page_height)
+            output_pdf_current_page.clean_contents()
+            
+            #把当前页面转化为temp.png
+            input_pdf_page_pixmap=input_pdf_page.get_pixmap(dpi=300)
+            input_pdf_page_pixmap.save('temp.png',output='png')
+            
+            #获取当前页面的所有文本块的pymupdf坐标，接着翻译、填充到要输出的文件的页面
+            blocks=ai_blocks('temp.png')
+            for each_block in blocks:
+                if each_block["class_id"]==1 or each_block["class_id"]==2 :
+                    each_block_bbox=bbox_transform(each_block["bbox_normalized"],input_pdf_page_width,input_pdf_page_height)
+                    each_block_rect=fitz.Rect(each_block_bbox[0],\
+                                            each_block_bbox[1],\
+                                            each_block_bbox[2],\
+                                            each_block_bbox[3])
+                if  each_block["class"]=='title':
+                    each_block_bbox=bbox_transform(each_block["bbox_normalized"],input_pdf_page_width,input_pdf_page_height)
+                    each_block_rect=fitz.Rect(each_block_bbox[0]-20,\
+                                            each_block_bbox[1],\
+                                            each_block_bbox[2]+5,\
+                                            each_block_bbox[3])
+                
+                each_block_dict_blocks = (input_pdf_page.get_text("dict", clip=each_block_rect))['blocks']
+                
+                if each_block_dict_blocks != [] and each_block_dict_blocks[0]['type']==0:
+                    each_block_fontsize = each_block_dict_blocks[0]['lines'][0]['spans'][0]['size']
+                    each_block_text=to_plain_block(input_pdf_page.get_text('text',clip=each_block_rect))
+                    
+                    each_block_tran=baidu_translate(each_block_text)[0]['dst']
+                    print(each_block_tran,end='\n\n')
+                    output_pdf_current_page.draw_rect(each_block_rect, color=(1, 0, 0)) 
+                    
+                    while output_pdf_current_page.insert_textbox(\
+                        rect=each_block_rect,\
+                        buffer=each_block_tran,\
+                        fontname='china-ss',\
+                        fontsize=each_block_fontsize) <0:
+                        each_block_rect[0]+=1
+                        each_block_rect[1]+=1
+                        each_block_rect[2]+=1
+                        each_block_rect[3]+=1
+                        each_block_fontsize-=1
+
+    output_pdf.save(f"{input_pdf_path}-中文翻译版.pdf")
+    output_pdf.close()
+    os.remove('temp.png')
+
+    return 1

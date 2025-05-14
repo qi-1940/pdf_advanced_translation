@@ -4,7 +4,7 @@ import time
 import threading
 import os
 #from fpdf import FPDF  # 示例中用伪代码模拟PDF读取和翻译
-from translation import translate_pdf
+from translation import translate_pdf_ai
 
 class PDFTranslatorGUI(wx.Frame):
     def __init__(self):
@@ -106,7 +106,7 @@ class PDFTranslatorGUI(wx.Frame):
         #    self.update_status("翻译失败！")
          # ===== 修改标记1：获取并显示翻译后路径 =====
        # 获取翻译后的文本内容
-        translated_text = translate_pdf(pdf_path)
+        translated_text = translate_pdf_ai(pdf_path)
         
         if translated_text:  # 如果翻译成功
             # ===== 关键修改：生成绝对路径 =====
