@@ -2,6 +2,7 @@ import cv2
 import json
 from doclayout_yolo import YOLOv10
 import torch
+import os
 
 def analyze_document_layout(image_path, model_path, output_dir="output"):
     """
@@ -43,28 +44,28 @@ def analyze_document_layout(image_path, model_path, output_dir="output"):
             "height_pixels": round(bbox[3] - bbox[1], 1)  # 区域高度
         }
         results.append(result)
-        '''
-            # 创建输出目录
-            import os
-            os.makedirs(output_dir, exist_ok=True)
+        
+        # 创建输出目录
+        
+        os.makedirs(output_dir, exist_ok=True)
 
-            # 保存JSON结果
-            json_path = os.path.join(output_dir, "layout_analysis.json")
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(results, f, ensure_ascii=False, indent=2)
-            print(f"检测结果已保存至: {json_path}")
+        # 保存JSON结果
+        json_path = os.path.join(output_dir, "layout_analysis.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+        print(f"检测结果已保存至: {json_path}")
 
-            # 可视化标注并保存
-            annotated_img = detections.plot(
-                pil=True,
-                line_width=3,
-                font_size=16,
-                labels=True,
-                conf=True  # 显示置信度
-            )
-            img_path = os.path.join(output_dir, "annotated_result.jpg")
-            cv2.imwrite(img_path, cv2.cvtColor(annotated_img, cv2.COLOR_RGB2BGR))
-            print(f"标注图像已保存至: {img_path}")'''
+        # 可视化标注并保存
+        annotated_img = detections.plot(
+            pil=True,
+            line_width=3,
+            font_size=16,
+            labels=True,
+            conf=True  # 显示置信度
+        )
+        img_path = os.path.join(output_dir, "annotated_result.jpg")
+        cv2.imwrite(img_path, cv2.cvtColor(annotated_img, cv2.COLOR_RGB2BGR))
+        print(f"标注图像已保存至: {img_path}")
         
     return results
 
@@ -75,10 +76,3 @@ def ai_blocks(png_path):
     
     # 执行分析
     return analyze_document_layout(png_path, MODEL_PATH)
-    
-    '''
-    # 打印前3个结果示例
-    print("\n检测到的前3个元素：")
-    for i, res in enumerate(layout_results[:3]):
-        print(f"{i+1}. {res['class']} (置信度: {res['confidence']:.2f})")
-        print(f"   位置: {res['bbox_pixels']}")'''

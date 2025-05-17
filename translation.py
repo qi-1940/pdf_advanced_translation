@@ -47,11 +47,6 @@ def to_plain_block(block):
 def is_english_letter(char):
     return len(char) == 1 and char.isalpha() and char.isascii()
 
-def is_close(float1,float2):
-    if abs(float1-float2)<=10:
-        return 1
-    return 0
-
 def bbox_transform(bbox,x,y):
     bbox[0] = bbox[0]*x
     bbox[2] = bbox[2]*x
@@ -97,16 +92,16 @@ def translate_pdf_ai(input_pdf_path):
                 if each_block_dict_blocks != [] and each_block_dict_blocks[0]['type']==0:
                     each_block_fontsize = each_block_dict_blocks[0]['lines'][0]['spans'][0]['size']
                     each_block_text=to_plain_block(input_pdf_page.get_text('text',clip=each_block_rect))
-                    
                     each_block_tran=baidu_translate(each_block_text)[0]['dst']
-                    print(each_block_tran,end='\n\n')
+                    print(each_block_tran)
+                    print(each_block_fontsize)
+
                     output_pdf_current_page.draw_rect(each_block_rect, color=(1, 0, 0)) 
-                    
                     while output_pdf_current_page.insert_textbox(\
                         rect=each_block_rect,\
                         buffer=each_block_tran,\
                         fontname='china-ss',\
-                        fontsize=each_block_fontsize) <0:
+                        fontsize=each_block_fontsize-1) <0:
                         each_block_rect[0]+=1
                         each_block_rect[1]+=1
                         each_block_rect[2]+=1
@@ -116,5 +111,4 @@ def translate_pdf_ai(input_pdf_path):
     output_pdf.save(f"{input_pdf_path}-中文翻译版.pdf")
     output_pdf.close()
     os.remove('temp.png')
-
     return 1

@@ -99,9 +99,7 @@ def is_next_line(last_para,Span_v2):
             if is_close(last_para.x2,Span_v2.x1)==1 and is_close(last_para.x1,Span_v2.x0):
                 return 1
     return 0
-
-
-    
+  
 def translate_pdf(input_pdf_path):
     Span = namedtuple("Span", ["text", "x0", "y0",'x1','y1','font_size'])
     para = namedtuple("para", ["text", "x0", "y0",'x1','y1','x2','y2','x3','y3','line_height','num_of_lines'])

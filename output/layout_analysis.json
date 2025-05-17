@@ -1,0 +1,192 @@
+[
+  {
+    "class": "plain text",
+    "class_id": 1,
+    "confidence": 0.9811999201774597,
+    "bbox_pixels": [
+      170.2,
+      210.8,
+      1172.7,
+      706.7
+    ],
+    "bbox_normalized": [
+      0.1267,
+      0.1046,
+      0.8726,
+      0.3506
+    ],
+    "width_pixels": 1002.5,
+    "height_pixels": 495.9
+  },
+  {
+    "class": "plain text",
+    "class_id": 1,
+    "confidence": 0.9776225090026855,
+    "bbox_pixels": [
+      170.1,
+      711.7,
+      1173.5,
+      907.3
+    ],
+    "bbox_normalized": [
+      0.1266,
+      0.353,
+      0.8732,
+      0.4501
+    ],
+    "width_pixels": 1003.4,
+    "height_pixels": 195.6
+  },
+  {
+    "class": "plain text",
+    "class_id": 1,
+    "confidence": 0.9702595472335815,
+    "bbox_pixels": [
+      170.4,
+      912.2,
+      1172.8,
+      1058.5
+    ],
+    "bbox_normalized": [
+      0.1268,
+      0.4525,
+      0.8726,
+      0.525
+    ],
+    "width_pixels": 1002.3,
+    "height_pixels": 146.3
+  },
+  {
+    "class": "plain text",
+    "class_id": 1,
+    "confidence": 0.965772271156311,
+    "bbox_pixels": [
+      170.1,
+      1313.1,
+      1172.6,
+      1505.8
+    ],
+    "bbox_normalized": [
+      0.1266,
+      0.6513,
+      0.8725,
+      0.7469
+    ],
+    "width_pixels": 1002.5,
+    "height_pixels": 192.7
+  },
+  {
+    "class": "plain text",
+    "class_id": 1,
+    "confidence": 0.9597797989845276,
+    "bbox_pixels": [
+      170.7,
+      1062.6,
+      1172.9,
+      1208.0
+    ],
+    "bbox_normalized": [
+      0.127,
+      0.5271,
+      0.8727,
+      0.5992
+    ],
+    "width_pixels": 1002.3,
+    "height_pixels": 145.4
+  },
+  {
+    "class": "plain text",
+    "class_id": 1,
+    "confidence": 0.9489849805831909,
+    "bbox_pixels": [
+      170.1,
+      1212.4,
+      1172.9,
+      1307.0
+    ],
+    "bbox_normalized": [
+      0.1266,
+      0.6014,
+      0.8727,
+      0.6483
+    ],
+    "width_pixels": 1002.8,
+    "height_pixels": 94.7
+  },
+  {
+    "class": "plain text",
+    "class_id": 1,
+    "confidence": 0.9466145038604736,
+    "bbox_pixels": [
+      170.6,
+      1511.3,
+      1171.1,
+      1608.4
+    ],
+    "bbox_normalized": [
+      0.1269,
+      0.7497,
+      0.8713,
+      0.7978
+    ],
+    "width_pixels": 1000.5,
+    "height_pixels": 97.1
+  },
+  {
+    "class": "abandon",
+    "class_id": 2,
+    "confidence": 0.8581985235214233,
+    "bbox_pixels": [
+      169.2,
+      1716.6,
+      629.6,
+      1745.2
+    ],
+    "bbox_normalized": [
+      0.1259,
+      0.8515,
+      0.4684,
+      0.8657
+    ],
+    "width_pixels": 460.3,
+    "height_pixels": 28.6
+  },
+  {
+    "class": "plain text",
+    "class_id": 1,
+    "confidence": 0.8450237512588501,
+    "bbox_pixels": [
+      218.5,
+      1612.3,
+      1159.1,
+      1659.5
+    ],
+    "bbox_normalized": [
+      0.1626,
+      0.7997,
+      0.8624,
+      0.8232
+    ],
+    "width_pixels": 940.6,
+    "height_pixels": 47.2
+  },
+  {
+    "class": "abandon",
+    "class_id": 2,
+    "confidence": 0.7967827916145325,
+    "bbox_pixels": [
+      1154.1,
+      1723.4,
+      1170.7,
+      1746.5
+    ],
+    "bbox_normalized": [
+      0.8587,
+      0.8548,
+      0.871,
+      0.8663
+    ],
+    "width_pixels": 16.6,
+    "height_pixels": 23.1
+  }
+]
