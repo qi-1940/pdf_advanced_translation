@@ -55,5 +55,9 @@ mxh翻译逻辑
 2.MXH（类Linux系统）在运行 open()函数时编译转换使用'gbk'发生错误，使用'utf-8'时正常运行
 （JH怀疑是Windows和Linux系统对'utf-8'和'gbk'的定义不一样。）
 
-4. 标签 类型：abandon,title,table_caption,table,figure,figure_caption,plain text,
+4. class里面的标签类型：abandon,title,table_caption,table,figure,plain text,formula,formula_caption,
 ----5.13
+其中图片/公式/表格需要的class 类有：table,figure,formula,formula_caption
+
+5. 文字处理需要的class 类有title abandon table_capiton,plain text
+----5.17
