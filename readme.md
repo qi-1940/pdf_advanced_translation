@@ -61,5 +61,5 @@ mxh翻译逻辑
 ----5.13
 其中图片/公式/表格需要的class 类有：table,figure,formula,formula_caption
 
-5. 文字处理需要的class 类有title abandon table_capiton,plain text
+5. 文字处理需要的class 类有title abandon table_capiton,plain text figure_captain(5.20加figure_captain)
 ----5.17
