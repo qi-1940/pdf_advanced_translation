@@ -11,17 +11,37 @@ import requests
 import time
 import fitz 
 import os
+import shutil
 from ai3 import ai_pdf_process
 
+import hashlib
+import time
+import requests
+
+import hashlib
+import time
+import requests
+import re
+
 def baidu_translate(query):
-    app_id = '20250425002342076'
-    secret_key = 'pT1QnotEaWuvpefNLgce'
+    # 参数验证
+    if not query or not isinstance(query, str):
+        raise ValueError("查询文本不能为空且必须是字符串")
+    
+    # 清理文本（移除非法字符）
+    query = clean_text(query)
+    if not query:
+        raise ValueError("清理后的查询文本为空")
+    
+    app_id = '20250415002334058'
+    secret_key = 'SVA9Lv0mE90NQsj76c0W'
     url = 'https://fanyi-api.baidu.com/api/trans/vip/translate'
-    salt = str(round(time.time()))  # 随机数，这里使用了当前时间戳（秒级）
+    
+    # 生成签名
+    salt = str(round(time.time() * 1000))  # 毫秒级时间戳
     sign_str = app_id + query + salt + secret_key
-    md5_obj = hashlib.md5()
-    md5_obj.update(sign_str.encode('utf-8')) # 对字符串做md5加密，注意需32位小写，即结果为'a1a7461d92e5194c5cae3182b5b24de1'
-    sign =md5_obj.hexdigest()
+    sign = hashlib.md5(sign_str.encode('utf-8')).hexdigest()
+    
     params = {
         'appid': app_id,
         'q': query,
@@ -30,12 +50,61 @@ def baidu_translate(query):
         'salt': salt,
         'sign': sign,
     }
-    # Build request
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    # Send request
-    r = requests.post(url, params, headers=headers).json()
-    # Show response
-    return r['trans_result']
+    
+    try:
+        response = requests.post(url, data=params, timeout=10)
+        response.raise_for_status()
+        r = response.json()
+        
+        if 'error_code' in r:
+            error_msg = f"错误码 {r['error_code']}: {r.get('error_msg', '未知错误')}"
+            if r['error_code'] == '54003':  # 频率限制
+                time.sleep(1.1)
+            raise Exception(error_msg)
+            
+        if 'trans_result' not in r:
+            raise Exception(f"响应格式异常: {r}")
+            
+        return r['trans_result']
+        
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"网络请求失败: {str(e)}")
+    except ValueError:
+        raise Exception("响应解析失败，非JSON格式")
+
+def clean_text(text):
+    """清理文本中的非法字符"""
+    # 移除控制字符（ASCII 0-31和127）
+    text = re.sub(r'[\x00-\x1F\x7F]', '', text)
+    # 移除BOM标记
+    text = text.replace('\ufeff', '')
+    # 移除首尾空白
+    return text.strip()
+
+# 使用示例
+try:
+    # 测试各种情况
+    test_cases = [
+        "Hello World!",  # 正常文本
+        "",              # 空文本
+        "\x00Test\x1F",  # 包含控制字符
+        "   ",           # 空白文本
+        "A" * 7000       # 超长文本
+    ]
+    
+    for text in test_cases:
+        try:
+            print(f"翻译文本: {text[:50]}...")  # 显示前50个字符
+            result = baidu_translate(text)
+            print("翻译结果:", result)
+        except Exception as e:
+            print(f"翻译失败: {str(e)}")
+        print("-" * 50)
+        
+except Exception as e:
+    print(f"测试失败: {str(e)}")
+
+
 
 def to_plain_block(block):
     plain_block=''
@@ -58,11 +127,22 @@ def bbox_transform(bbox,x,y):
 def is_tag_textbox(tag_str):
     if tag_str=='title' or \
         tag_str=='abandon' or \
-        tag_str=='table_caption' \
-        or tag_str=='plain text':
+        tag_str=='table_caption' or \
+        tag_str=='figure_caption' or \
+        tag_str=='plain text':
         return 1
     else:
         return 0 
+
+def draw_custom_rect(page, rect):
+    shape = page.new_shape()
+    
+    # 绘制矩形（同时填充和描边）
+    shape.draw_rect(rect)
+    shape.finish()
+    
+    # 提交到页面
+    shape.commit()
 
 def translate_pdf_ai(input_pdf_path):
 
@@ -91,7 +171,7 @@ def translate_pdf_ai(input_pdf_path):
                     for temp_page_block in temp_page_blocks:
                         if is_tag_textbox(temp_page_block['class'])==1:
                             temp_page_text_blocks.append(temp_page_block)
-
+                            
                     #遍历当前页面的所有文字块
                     for each_temp_page_text_block in temp_page_text_blocks:
                         #得到当前文字块的pymupdf坐标
@@ -100,19 +180,18 @@ def translate_pdf_ai(input_pdf_path):
                             each_block_rect=fitz.Rect(each_block_bbox[0]-20,each_block_bbox[1],each_block_bbox[2]+5,each_block_bbox[3])
                         else :
                             each_block_bbox=bbox_transform(each_temp_page_text_block["bbox_normalized"],temp_pdf_page_width,temp_pdf_page_height)
-                            each_block_rect=fitz.Rect(each_block_bbox[0],each_block_bbox[1],each_block_bbox[2],each_block_bbox[3])
-                            
+                            each_block_rect=fitz.Rect(each_block_bbox[0]-5,each_block_bbox[1],each_block_bbox[2]+15,each_block_bbox[3])
+                        draw_custom_rect(temp_pdf_page,each_block_rect)
                         each_block_dict_blocks = (input_pdf_page.get_text("dict", clip=each_block_rect))['blocks']
-                        #with open("temp.txt", "w", encoding="utf-8") as file:
-                        #    each_block_dict_blocks[0]
                         
-                        #文字块字号提取、翻译与填充代码
+                        #文字块字号提取、翻译与填充
                         if each_block_dict_blocks != [] and each_block_dict_blocks[0]['type']==0:
                             each_block_fontsize = each_block_dict_blocks[0]['lines'][0]['spans'][0]['size']
                             each_block_text=to_plain_block(input_pdf_page.get_text('text',clip=each_block_rect))
+                            #with open("output.txt", "a", encoding="utf-8") as f:
+                            #    f.write(each_block_text)
+                            #    f.write('\n')
                             each_block_tran=baidu_translate(each_block_text)[0]['dst']
-                            #print(each_block_tran)
-                            #print(each_block_text)
                             while temp_pdf_page.insert_textbox(rect=each_block_rect,buffer=each_block_tran,fontname='china-ss',\
                                 fontsize=each_block_fontsize-1) <0:
                                 each_block_rect[0]+=1
@@ -120,11 +199,13 @@ def translate_pdf_ai(input_pdf_path):
                                 each_block_rect[2]+=1
                                 each_block_rect[3]+=1
                                 each_block_fontsize-=1
-    
+                        
                 except FileNotFoundError:
                     print("文件不存在！")
                 except json.JSONDecodeError:
-                    print("JSON 格式错误！")
-                
+                    print("JSON 格式错误！")   
         temp_pdf.save(f"{input_pdf_path}-中文翻译版.pdf")
+        current_dir = os.getcwd()  # 获取当前工作目录
+        target_path = os.path.join(current_dir, 'output')  # 构造完整路径
+        shutil.rmtree(target_path)
     return 1
