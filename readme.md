@@ -63,3 +63,8 @@ mxh翻译逻辑
 
 5. 文字处理需要的class 类有title abandon table_capiton,plain text figure_captain(5.20加figure_captain)
 ----5.17
+
+***
+
+# 开发文档
+## 开发思路

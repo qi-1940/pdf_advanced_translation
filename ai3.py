@@ -1,5 +1,6 @@
 import cv2
 import json
+import fitz
 import torch
 import tempfile
 from PIL import Image
@@ -8,7 +9,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 import os
-from pdf2image import convert_from_path
+from pdf2image import convert_from_path # type: ignore
 
 def single_pdf_to_png(pdf_path, output_folder, dpi=300, fmt='png', quality=100):
     """
@@ -121,17 +122,29 @@ def analyze_document_layout(image_path, model_path, page_num,output_dir="output"
     
     return json_path
 
-def generate_clean_pdf(image_paths, json_paths, output_pdf):
+def generate_clean_pdf(image_paths, json_paths, output_pdf, original_pdf_path=None):
     """
     生成PDF文档：
     - 处理多个图片，每个图片一页
     - 如果检测到表格/公式/图像，则添加这些元素
     - 如果未检测到，则生成有效的空白PDF
+    - 保持与原PDF相同的页面尺寸
     """
     try:
+        # 获取原始PDF尺寸
+        if original_pdf_path:
+            with fitz.open(original_pdf_path) as input_pdf:
+                # 使用第一页的尺寸作为所有页面的尺寸
+                first_page = input_pdf[0]
+                pdf_width = first_page.rect.width
+                pdf_height = first_page.rect.height
+                page_size = (pdf_width, pdf_height)
+        else:
+            page_size = A4
+            pdf_width, pdf_height = A4
+        
         # 创建PDF画布
-        c = canvas.Canvas(output_pdf, pagesize=A4)
-        pdf_width, pdf_height = A4
+        c = canvas.Canvas(output_pdf, pagesize=page_size)
         
         for img_path, json_path in zip(image_paths, json_paths):
             # 检查是否有检测结果
@@ -158,7 +171,7 @@ def generate_clean_pdf(image_paths, json_paths, output_pdf):
                             cropped.save(temp_file.name, quality=95)
                             # 计算位置
                             pdf_x = x1 * scale_x
-                            pdf_y = pdf_height - (y2 * scale_y)
+                            pdf_y = pdf_height - (y2 * scale_y)  # PDF坐标系统从底部开始
                             c.drawImage(
                                 ImageReader(temp_file.name),
                                 pdf_x, pdf_y,
@@ -214,22 +227,19 @@ def process_pdf_to_final_pdf(pdf_path, model_path, output_dir="output", dpi=300)
     page_num=0
     for img_path in image_paths:
         print(f"\n正在分析: {os.path.basename(img_path)}")
-        json_path = analyze_document_layout(img_path, model_path, page_num,output_dir)
+        json_path = analyze_document_layout(img_path, model_path, page_num, output_dir)
         page_num+=1
         json_paths.append(json_path)
     
     # 第三步：生成最终PDF
     print("\n" + "="*50)
-    print("第三步：生成最终PDF")
+    print("第三步：生成中间PDF")
     print("="*50)
     final_pdf = os.path.join(output_dir, "temp.pdf")
-    generate_clean_pdf(image_paths, json_paths, final_pdf)
+    generate_clean_pdf(image_paths, json_paths, final_pdf, original_pdf_path=pdf_path)
     
     print("\n" + "="*50)
-    print("处理完成！")
-    print(f"- 中间图像保存在: {image_dir}")
-    print(f"- 布局分析结果保存在: {os.path.join(output_dir, 'json')}")
-    print(f"- 最终PDF文件: {final_pdf}")
+    print("预处理完成！")
     print("="*50)
     
     return True
