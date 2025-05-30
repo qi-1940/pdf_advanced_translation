@@ -11,7 +11,7 @@ from reportlab.lib.utils import ImageReader
 import os
 from pdf2image import convert_from_path # type: ignore
 
-def single_pdf_to_png(pdf_path, output_folder, dpi=300, fmt='png', quality=100):
+def single_pdf_to_png(pdf_path, output_folder, dpi=300, fmt='png', quality=100, page_limit=0):
     """
     将单个多页PDF转换为PNG（无进度条，保持原始比例）
     :param pdf_path: PDF文件路径
@@ -19,6 +19,7 @@ def single_pdf_to_png(pdf_path, output_folder, dpi=300, fmt='png', quality=100):
     :param dpi: 输出分辨率(默认300)
     :param fmt: 输出格式(png/jpeg)
     :param quality: 图像质量(1-100)
+    :param page_limit: 限制转换的页数，0表示转换所有页 
     :return: (成功状态, 生成图片路径列表)
     """
     try:
@@ -29,24 +30,40 @@ def single_pdf_to_png(pdf_path, output_folder, dpi=300, fmt='png', quality=100):
         # 创建输出目录
         os.makedirs(output_folder, exist_ok=True)
         
-        print(f"正在转换: {os.path.basename(pdf_path)} -> {fmt.upper()} (DPI={dpi})")
+        # 确定实际转换的页数
+        if page_limit > 0:
+            print(f"正在转换: {os.path.basename(pdf_path)} -> {fmt.upper()} (DPI={dpi}, 前{page_limit}页)")
+        else:
+            print(f"正在转换: {os.path.basename(pdf_path)} -> {fmt.upper()} (DPI={dpi})")
 
         output_paths = []
         
         # 使用临时目录处理
         with tempfile.TemporaryDirectory() as temp_dir:
             # 转换PDF为图像（保持原始宽高比）
-            images = convert_from_path(
-                pdf_path,
-                dpi=dpi,
-                output_folder=temp_dir,
-                fmt=fmt,
-                output_file="page",
-                paths_only=True,
-                thread_count=4,
-                use_pdftocairo=True,
-                jpegopt={"quality": quality} if fmt == 'jpeg' else None
-            )
+            convert_kwargs = {
+                'pdf_path': pdf_path,
+                'dpi': dpi,
+                'output_folder': temp_dir,
+                'fmt': fmt,
+                'output_file': "page",
+                'paths_only': True,
+                'thread_count': 4,
+                'use_pdftocairo': True,
+            }
+            
+            # 如果指定了页数限制，添加相应参数
+            if page_limit > 0:
+                convert_kwargs['last_page'] = page_limit
+                
+            if fmt == 'jpeg':
+                convert_kwargs['jpegopt'] = {"quality": quality}
+            
+            images = convert_from_path(**convert_kwargs)
+
+            # 限制处理的图像数量
+            if page_limit > 0:
+                images = images[:page_limit]
 
             for i, img_path in enumerate(images):
                 new_path = os.path.join(output_folder, f"page_{i+1:03d}.{fmt}")
@@ -193,7 +210,7 @@ def generate_clean_pdf(image_paths, json_paths, output_pdf, original_pdf_path=No
         print(f"生成PDF时出错: {str(e)}")
         return False
 
-def process_pdf_to_final_pdf(pdf_path, model_path, output_dir="output", dpi=300):
+def process_pdf_to_final_pdf(pdf_path, model_path, output_dir="output", dpi=300, page_num=0):
     """
     完整处理流程：
     1. PDF转PNG
@@ -213,7 +230,8 @@ def process_pdf_to_final_pdf(pdf_path, model_path, output_dir="output", dpi=300)
     success, image_paths = single_pdf_to_png(
         pdf_path=pdf_path,
         output_folder=image_dir,
-        dpi=dpi
+        dpi=dpi,
+        page_limit=page_num if page_num > 0 else 0  # 传递页数限制
     )
     
     if not success:
@@ -224,11 +242,11 @@ def process_pdf_to_final_pdf(pdf_path, model_path, output_dir="output", dpi=300)
     print("第二步：文档布局分析")
     print("="*50)
     json_paths = []
-    page_num=0
+    current_page_num = 0
     for img_path in image_paths:
         print(f"\n正在分析: {os.path.basename(img_path)}")
-        json_path = analyze_document_layout(img_path, model_path, page_num, output_dir)
-        page_num+=1
+        json_path = analyze_document_layout(img_path, model_path, current_page_num, output_dir)
+        current_page_num += 1
         json_paths.append(json_path)
     
     # 第三步：生成最终PDF
@@ -244,9 +262,9 @@ def process_pdf_to_final_pdf(pdf_path, model_path, output_dir="output", dpi=300)
     
     return True
 
-def ai_pdf_process(pdf_path):
+def ai_pdf_process(pdf_path, page_num=0):
     # 配置参数
-    MODEL_PATH = "doclayout_yolo_docstructbench_imgsz1024.pt"  # 模型路径
+    MODEL_PATH = "resourses/doclayout_yolo_docstructbench_imgsz1024.pt"  # 模型路径
     OUTPUT_DIR = "output"  # 输出目录
     DPI = 300  # PDF转换分辨率
     
@@ -255,5 +273,6 @@ def ai_pdf_process(pdf_path):
         pdf_path=pdf_path,
         model_path=MODEL_PATH,
         output_dir=OUTPUT_DIR,
-        dpi=DPI
+        dpi=DPI,
+        page_num=page_num
     )

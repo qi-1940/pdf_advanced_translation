@@ -1,7 +1,7 @@
 '''
 调用翻译函数的方法：
 from translation import translate_pdf_ai
-translate_pdf_ai(pdf_path)
+translate_pdf_ai(pdf_path, page_num=-1),page_num为-1时，翻译所有页数，否则翻译指定页数
 如果翻译成功，返回1，否则返回0
 '''
 import sys
@@ -10,19 +10,67 @@ import hmac
 import json
 import requests
 import time
-import fitz 
+import fitz
 import os
 import shutil
 from ai3 import ai_pdf_process
-
 import hashlib
 import time
 import requests
 import re
 
+# 全局变量用于存储日志回调函数
+log_callback = None
+redirector_instance = None  # 添加全局重定向器实例
+output_path = None
+
+def set_log_callback(callback):
+    """设置日志回调函数"""
+    global log_callback, redirector_instance
+    log_callback = callback
+    
+    # 如果已有重定向器，先清理
+    if redirector_instance:
+        redirector_instance.cleanup()
+    
+    # 创建新的重定向器实例
+    if callback:
+        redirector_instance = LogRedirector()
+
+class LogRedirector:
+    """重定向标准输出的类"""
+    def __init__(self):
+        self.old_stdout = sys.stdout
+        self.is_redirected = False
+        self.start_redirect()
+
+    def start_redirect(self):
+        """开始重定向"""
+        if not self.is_redirected:
+            sys.stdout = self
+            self.is_redirected = True
+
+    def cleanup(self):
+        """清理重定向"""
+        if self.is_redirected:
+            sys.stdout = self.old_stdout
+            self.is_redirected = False
+
+    def write(self, text):
+        if text.strip():  # 忽略空行
+            if log_callback:
+                log_callback(text.strip())
+            self.old_stdout.write(text)
+
+    def flush(self):
+        self.old_stdout.flush()
+
+    def __del__(self):
+        self.cleanup()
+
 def is_segments_overlapping(seg1,seg2):
     '''
-    判断两个线段是否重叠，重叠返回1
+    判断两个线段是否重叠，重叠返回重叠的长度
     '''
     if seg1[1]>=seg1[0]:
         s1x1=seg1[1]
@@ -38,8 +86,26 @@ def is_segments_overlapping(seg1,seg2):
         s2x1=seg2[0]
         s2x0=seg2[1]
 
-    if (s2x0>=s1x0 and s2x0<=s1x1) or (s2x1>=s1x0 and s2x1<=s1x1):
-        return 1
+    if (s2x0>s1x0 and s2x0<s1x1) or (s2x1>s1x0 and s2x1<s1x1):
+        x=[]
+        x.append(s1x0)
+        x.append(s1x1)
+        x.append(s2x0)
+        x.append(s2x1)
+        x_len=max(x)-min(x)
+        s1_len=s1x1-s1x0
+        s2_len=s2x1-s2x0
+        return s1_len+s2_len-x_len
+    elif (s1x0>s2x0 and s1x0<s2x1) or (s1x1>s2x0 and s1x1<s2x1):
+        x=[]
+        x.append(s1x0)
+        x.append(s1x1)
+        x.append(s2x0)
+        x.append(s2x1)
+        x_len=max(x)-min(x)
+        s1_len=s1x1-s1x0
+        s2_len=s2x1-s2x0
+        return s1_len+s2_len-x_len
     else:
         return 0
 
@@ -61,28 +127,48 @@ def is_rects_overlapping(rect1, rect2):
     r2s1=(rect2.x0,rect2.x1)
     r2s2=(rect2.y0,rect2.y1)
     
-    if is_segments_overlapping(r1s1,r2s1) and is_segments_overlapping(r1s2,r2s2):
-        return 1
+    if is_segments_overlapping(r1s1,r2s1)>0.01 and is_segments_overlapping(r1s2,r2s2)>0.01:
+        overlapping_area=is_segments_overlapping(r1s1,r2s1)*is_segments_overlapping(r1s2,r2s2)
+        if overlapping_area/rect_area(rect1)>0.5 or overlapping_area/rect_area(rect2)>0.5:
+            return 1
     return 0
 
-def rect_size(rect):
-    return abs(rect.x0-rect.x1)+abs(rect.y0-rect.y1)
+def rect_area(rect):
+    '''
+    计算矩形面积
+    '''
+    return abs(rect.x0-rect.x1)*abs(rect.y0-rect.y1)
 
-def add_text_block_rect_check(temp_rect,rect_lists):
+def add_text_block_rect_check(temp_rect, rect_lists):
     '''
     检查temp_rect和rect_lists里的元素有无冲突，
-    如果冲突，返回(1,num)num是冲突的rect的索引，否则返回(0,-1)
+    如果冲突，返回(1, [num1, num2, ...])，其中num1, num2等是冲突的rect的索引
+    如果temp_rect的面积小于任何一个冲突的rect，则返回(1, [])
+    如果temp_rect的面积大于所有冲突的rect，则返回(1, [num1, num2, ...])
+    返回(0, [])表示没有冲突
     '''
-    num=-1
+    if rect_lists == []:
+        return (0, [])
     
-    for rect in rect_lists:
-        num+=1
-        if is_rects_overlapping(temp_rect,rect):
-            if rect_size(rect)<rect_size(temp_rect):
-                return (1,num)
-            else :
-                return (1,-1)
-    return (0,-1)
+    overlapping_indices = []
+    temp_rect_area = rect_area(temp_rect)
+    
+    # 找出所有重叠的矩形
+    for i, rect in enumerate(rect_lists):
+        if is_rects_overlapping(temp_rect, rect):
+            overlapping_indices.append(i)
+    
+    # 如果没有重叠，返回(0, [])
+    if not overlapping_indices:
+        return (0, [])
+    
+    # 检查temp_rect是否比所有重叠的矩形都大
+    for idx in overlapping_indices:
+        if rect_area(rect_lists[idx]) >= temp_rect_area:
+            return (1, [])  # temp_rect不是最大的，返回空列表
+    
+    # temp_rect是最大的，返回所有重叠矩形的索引
+    return (1, overlapping_indices)
 
 def to_plain_block(block):
     '''
@@ -115,21 +201,24 @@ def is_tag_textbox(tag_str):
     else:
         return 0 
 
-def draw_custom_rect(page, rect):
-    shape = page.new_shape()
-    # 绘制矩形（同时填充和描边）
-    shape.draw_rect(rect)
-    shape.finish()
+def draw_custom_rect(page, rect, number):
+    # 定义三种颜色：红、绿、蓝
+    colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+    # 根据编号选择颜色
+    color = colors[number % 3]
     
-    # 提交到页面
-    shape.commit()
+    # 绘制矩形框
+    page.draw_rect(rect, color=color, width=1.5)
+    
+    # 添加编号（使用相同的颜色）
+    page.insert_text((rect.x0-10, rect.y0 - 5), str(number), fontsize=8, color=color)
 
 def is_all_english_letters(text):
     return all('a' <= c <= 'z' or 'A' <= c <= 'Z' for c in text)
 
 def baidu_translate(query):
-    app_id = '20250425002342076'
-    secret_key = 'pT1QnotEaWuvpefNLgce'
+    app_id = '20250530002369626'
+    secret_key = 'my7HZRD2d4wbUPwf5NZf'
     url = 'https://fanyi-api.baidu.com/api/trans/vip/translate'
     salt = str(round(time.time()))
     sign_str = app_id + query + salt + secret_key
@@ -150,75 +239,12 @@ def baidu_translate(query):
         print(r.get('error_msg'))
         return 0
 
-def insert_mixed_text(page, rect, text, font_en, font_cn, base_fontsize):
-    """
-    在指定矩形区域绘制中英文混合文本（自动区分字体）
-    
-    参数:
-        page: PDF页面对象
-        rect: 文本框区域(fitz.Rect)
-        text: 要绘制的字符串(可包含中英文)
-        font_en: 英文字体
-        font_cn: 中文字体
-        base_fontsize: 基础字号
-    """
-    draw_custom_rect(page,rect)
-    writer = fitz.TextWriter(rect)
-    current_pos = fitz.Point(rect.x0, rect.y0)  # 起始位置
-    line_height = base_fontsize * 1.2  # 行高
-    
-    # 智能分割混合字符串（处理中英文交界情况）
-    segments = []
-    current_seg = ""
-    current_is_chinese = None
-    
-    for char in text:
-        is_chinese = "\u4e00" <= char <= "\u9fff"  # 判断是否为中文字符
-        
-        if current_is_chinese is None:
-            current_is_chinese = is_chinese
-            
-        if is_chinese == current_is_chinese:
-            current_seg += char
-        else:
-            segments.append((current_seg, current_is_chinese))
-            current_seg = char
-            current_is_chinese = is_chinese
-    
-    if current_seg:  # 添加最后一个分段
-        segments.append((current_seg, current_is_chinese))
+def translate_pdf_ai(input_pdf_path,page_num=0):
 
-    # 逐段绘制
-    for segment, is_chinese in segments:
-        font = font_cn if is_chinese else font_en
-        fontsize = base_fontsize * 0.95 if is_chinese else base_fontsize  # 中文略小
-        
-        # 计算当前段文本宽度
-        text_width = font.text_length(segment, fontsize=fontsize)
-        
-        # 检查是否需要换行
-        if current_pos.x + text_width > rect.x1:
-            current_pos = fitz.Point(rect.x0, current_pos.y + line_height)
-        
-        # 添加文本段
-        writer.append(
-            pos=current_pos,
-            text=segment,
-            font=font,
-            fontsize=fontsize
-        )
-        
-        # 更新位置（向右移动）
-        current_pos += fitz.Point(text_width, 0)
-    
-    # 写入页面
-    writer.write_text(page, rect)
-
-def translate_pdf_ai(input_pdf_path,page_num=-1):
     #预处理（除了文字块外的所有处理）
-    #if ai_pdf_process(input_pdf_path) == False:
-    #    print('预处理失败！')
-    #    return 0
+    if ai_pdf_process(input_pdf_path, page_num) == False:
+        print('预处理失败！')
+        return 0
     
     print("\n" + "="*50)
     print("第二阶段：文字块处理")
@@ -227,100 +253,114 @@ def translate_pdf_ai(input_pdf_path,page_num=-1):
 
     with fitz.open('output/temp.pdf') as temp_pdf:
         with fitz.open(input_pdf_path) as input_pdf:
-            with open("temp.txt", "a", encoding="utf-8") as temp_txt:
-                
-                #要翻译的页数
-                if page_num==-1:
-                    page_num=temp_pdf.page_count
+            #要翻译的页数
+            if page_num==0:
+                page_num=temp_pdf.page_count
 
-                temp_page_num=0
+            temp_page_num=1
+            
+            for temp_pdf_page in temp_pdf:
+                if temp_page_num>page_num:
+                    break
+
+                print(f'正在处理\t第{temp_page_num}页，\t共{temp_pdf.page_count}页')
+                #temp_txt.write(f'temp page num:{temp_page_num}\n')
+                input_pdf_page=input_pdf[temp_page_num-1]
+                temp_page_text_block_rects=[]
+                temp_pdf_page.insert_font(fontfile='msyh.ttf',fontname='msyh')
+
+                #获取当前页面的宽度和高度
+                temp_pdf_page_width = temp_pdf_page.rect.width  # 获取宽度（点）
+                temp_pdf_page_height = temp_pdf_page.rect.height  # 获取高度（点）
+
+                #得到每个pdf页面的块列表
+                with open(f"output/json/{temp_page_num-1}.json", "r", encoding="utf-8") as temp_page_json_file:
+                    temp_page_blocks = json.load(temp_page_json_file)
+                temp_page_num+=1
+
+                #得到当前页面的文字块列表
+                temp_page_text_blocks = [temp_page_block for temp_page_block in temp_page_blocks if is_tag_textbox(temp_page_block['class']) == 1]
                 
-                for temp_pdf_page in temp_pdf:
-                    if temp_page_num>page_num:
+                #遍历当前页面的所有文字块，得到文字块rect列表temp_page_text_block_rects
+                for each_temp_page_text_block in temp_page_text_blocks:
+                    #得到当前文字块的pymupdf坐标
+                    each_block_bbox=bbox_transform(each_temp_page_text_block["bbox_normalized"],temp_pdf_page_width,temp_pdf_page_height)
+                    each_block_rect=fitz.Rect(each_block_bbox[0],each_block_bbox[1],each_block_bbox[2],each_block_bbox[3])
+                    if rect_area(each_block_rect)<10:#跳过面积小于10的块
+                        #temp_txt.write(f'skip:{each_block_rect}\n')
                         continue
 
-                    print(f'正在处理第{temp_page_num}页，\t共{temp_pdf.page_count}页')
-                    temp_txt.write(f'temp page num:{temp_page_num}\n')
-                    input_pdf_page=input_pdf[temp_page_num]
-                    temp_page_text_block_rects=[]
-                    temp_pdf_page.insert_font(fontfile='msyh.ttf',fontname='msyh')
-
-                    #获取当前页面的宽度和高度
-                    temp_pdf_page_width = temp_pdf_page.rect.width  # 获取宽度（点）
-                    temp_pdf_page_height = temp_pdf_page.rect.height  # 获取高度（点）
-
-                    #得到每个pdf页面的块列表
-                    with open(f"output/json/{temp_page_num}.json", "r", encoding="utf-8") as temp_page_json_file:
-                        temp_page_blocks = json.load(temp_page_json_file)
-                    temp_page_num+=1
-
-                    #得到当前页面的文字块列表
-                    temp_page_text_blocks = [temp_page_block for temp_page_block in temp_page_blocks if is_tag_textbox(temp_page_block['class']) == 1]
-                    
-                    #遍历当前页面的所有文字块，得到文字块rect列表temp_page_text_block_rects
-                    for each_temp_page_text_block in temp_page_text_blocks:
-                        #得到当前文字块的pymupdf坐标
-                        each_block_bbox=bbox_transform(each_temp_page_text_block["bbox_normalized"],temp_pdf_page_width,temp_pdf_page_height)
-                        each_block_rect=fitz.Rect(each_block_bbox[0],each_block_bbox[1],each_block_bbox[2],each_block_bbox[3])
-                        
-                        #如果当前rect和已存在的有重叠，则跳过当前的block
-                        if temp_page_text_block_rects==[]:
+                    #如果当前rect和已存在的有重叠，则跳过当前的block
+                    #temp_txt.write(f'each_block_rect:{each_block_rect}\n')
+                    #temp_txt.write(f'temp_page_text_block_rects:{temp_page_text_block_rects}\n')
+                    check_output = add_text_block_rect_check(each_block_rect, temp_page_text_block_rects)
+                    #temp_txt.write(f'check_output:{check_output}\n')
+                    if check_output[0] == 0:  # 没有重叠
+                        temp_page_text_block_rects.append(each_block_rect)
+                        #temp_txt.write(f'append:{each_block_rect}\n')
+                    else:
+                        if not check_output[1]:  # 返回空列表，说明temp_rect不是最大的
+                            pass
+                        else:  # 返回了重叠矩形的索引列表
+                            # 从后往前删除重叠的矩形，避免索引变化
+                            for idx in sorted(check_output[1], reverse=True):
+                                del temp_page_text_block_rects[idx]
+                            # 添加新的矩形
                             temp_page_text_block_rects.append(each_block_rect)
-                        else:
-                            check_output=add_text_block_rect_check(each_block_rect,temp_page_text_block_rects)
-                            if check_output[0]:
-                                temp_txt.write('出现了一次重叠\n')
-                                if check_output[1]==-1:
-                                    
-                                    continue
-                                else:
-                                    temp_page_text_block_rects[check_output[1]]=each_block_rect
-                            else:
-                                temp_page_text_block_rects.append(each_block_rect)
+                            #temp_txt.write('替换了多个重叠的块\n')
+
+                    #temp_txt.write(f'length of temp_page_text_block_rects:{len(temp_page_text_block_rects)}\n')
+                
+                # 添加编号计数器
+                rect_number = 0
+                for each_ready_rect in temp_page_text_block_rects:
+                    #draw_custom_rect(input_pdf_page, each_ready_rect, rect_number)
                     
-                    for each_ready_rect in temp_page_text_block_rects:
-                        draw_custom_rect(input_pdf_page,each_ready_rect)
+                    #获取这个block的详细信息以获得字号
+                    each_block_dict_blocks = (input_pdf_page.get_text("dict", clip=each_ready_rect))['blocks']
+                    
+                    #文字块的字号提取
+                    if each_block_dict_blocks != [] and each_block_dict_blocks[0]['type']==0:
+                        each_block_fontsize = each_block_dict_blocks[0]['lines'][0]['spans'][0]['size']
+                    else:
+                        each_block_fontsize=10
+                    
+                    #识别文字块中的英文
+                    each_block_text=to_plain_block(input_pdf_page.get_text('text',clip=each_ready_rect))
 
-                        #获取这个block的详细信息以获得字号
-                        each_block_dict_blocks = (input_pdf_page.get_text("dict", clip=each_ready_rect))['blocks']
-                        
-                        #文字块的字号提取
-                        if each_block_dict_blocks != [] and each_block_dict_blocks[0]['type']==0:
-                            each_block_fontsize = each_block_dict_blocks[0]['lines'][0]['spans'][0]['size']
+                    '''    
+                    把即将要拿去翻译的字符串记录到output.txt里
+                    temp_txt.write(f'{rect_number}:')
+                    temp_txt.write(each_block_text)
+                    temp_txt.write('\n')
+                    temp_txt.write(f'({each_ready_rect[0]} {each_ready_rect[1]} {each_ready_rect[2]} {each_ready_rect[3]})')
+                    temp_txt.write('\n')
+                    rect_number += 1
+                    '''
+                    
+                    #获取翻译后的文本
+                    if(is_all_english_letters(each_block_text)):
+                        each_block_tran=each_block_text
+                    else:
+                        each_block_tran=baidu_translate(each_block_text)
+                        if(each_block_tran==0):
+                            continue
                         else:
-                            each_block_fontsize=10
+                            each_block_tran=each_block_tran[0]['dst']
+                    
+                    #插入翻译后的文本
+                    while temp_pdf_page.insert_textbox(rect=each_ready_rect,buffer=each_block_tran,fontname='resourses/msyh.ttf',\
+                        fontsize=each_block_fontsize-1) <0:
+                        each_ready_rect[0]-=1
+                        each_ready_rect[1]-=1
+                        each_ready_rect[2]+=1
+                        each_ready_rect[3]+=1
+                        each_block_fontsize-=1
                         
-                        #识别文字块中的英文
-                        each_block_text=to_plain_block(input_pdf_page.get_text('text',clip=each_ready_rect))
-                            
-                        #把即将要拿去翻译的字符串记录到output.txt里
-                        temp_txt.write(each_block_text)
-                        temp_txt.write('\n')
-
-                        #获取翻译后的文本
-                        if(is_all_english_letters(each_block_text)):
-                            each_block_tran=each_block_text
-                        else:
-                            each_block_tran=baidu_translate(each_block_text)
-                            if(each_block_tran==0):
-                                continue
-                            else:
-                                each_block_tran=each_block_tran[0]['dst']
-                        
-                        #插入翻译后的文本
-                        while temp_pdf_page.insert_textbox(rect=each_ready_rect,buffer=each_block_tran,fontname='msyh',\
-                            fontsize=each_block_fontsize-1) <0:
-                            each_ready_rect[0]-=1
-                            each_ready_rect[1]-=1
-                            each_ready_rect[2]+=1
-                            each_ready_rect[3]+=1
-                            each_block_fontsize-=1
-            input_pdf.save('temp2.pdf')
-        temp_pdf.save(f"{input_pdf_path}-中文翻译版.pdf")
-    #current_dir = os.getcwd()  # 获取当前工作目录
-    #target_path = os.path.join(current_dir, 'output')  # 构造完整路径
-    #shutil.rmtree(target_path)
+        output_path = f"{input_pdf_path}-中文翻译版.pdf"
+        temp_pdf.save(output_path)
+    shutil.rmtree(os.path.join(os.getcwd(), 'output'))#删除output文件夹
     print("\n" + "="*50)
     print("全部完成！")
     print("="*50)
-    return 1
+    return output_path
