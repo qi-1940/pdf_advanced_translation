@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 '''
 调用翻译函数的方法：
-from translation import translate_pdf_ai
-translate_pdf_ai(pdf_path, page_num=-1),page_num为-1时，翻译所有页数，否则翻译指定页数
-如果翻译成功，返回1，否则返回0
+translate_pdf_ai(pdf_path, page_num=-1)
+page_num为-1时，翻译所有页数，否则翻译指定页数
+如果翻译成功，返回翻译文件路径，否则返回0
 '''
 import sys
 import hashlib
@@ -15,160 +15,7 @@ import os
 import shutil
 from ai3 import ai_pdf_process
 import requests
-from utils import get_resource_path
-
-# 全局变量用于存储日志回调函数
-log_callback = None
-redirector_instance = None  # 添加全局重定向器实例
-output_path = None
-
-
-
-def set_log_callback(callback):
-    """设置日志回调函数"""
-    global log_callback, redirector_instance
-    log_callback = callback
-    
-    # 如果已有重定向器，先清理
-    if redirector_instance:
-        redirector_instance.cleanup()
-    
-    # 创建新的重定向器实例
-    if callback:
-        redirector_instance = LogRedirector()
-
-class LogRedirector:
-    """重定向标准输出的类"""
-    def __init__(self):
-        self.old_stdout = sys.stdout
-        self.is_redirected = False
-        self.start_redirect()
-
-    def start_redirect(self):
-        """开始重定向"""
-        if not self.is_redirected:
-            sys.stdout = self
-            self.is_redirected = True
-
-    def cleanup(self):
-        """清理重定向"""
-        if self.is_redirected:
-            sys.stdout = self.old_stdout
-            self.is_redirected = False
-
-    def write(self, text):
-        if text.strip():  # 忽略空行
-            if log_callback:
-                log_callback(text.strip())
-            self.old_stdout.write(text)
-
-    def flush(self):
-        self.old_stdout.flush()
-
-    def __del__(self):
-        self.cleanup()
-
-def is_segments_overlapping(seg1,seg2):
-    '''
-    判断两个线段是否重叠，重叠返回重叠的长度
-    '''
-    if seg1[1]>=seg1[0]:
-        s1x1=seg1[1]
-        s1x0=seg1[0]
-    else:
-        s1x1=seg1[0]
-        s1x0=seg1[1]
-
-    if seg2[1]>=seg2[0]:
-        s2x1=seg2[1]
-        s2x0=seg2[0]
-    else:
-        s2x1=seg2[0]
-        s2x0=seg2[1]
-
-    if (s2x0>s1x0 and s2x0<s1x1) or (s2x1>s1x0 and s2x1<s1x1):
-        x=[]
-        x.append(s1x0)
-        x.append(s1x1)
-        x.append(s2x0)
-        x.append(s2x1)
-        x_len=max(x)-min(x)
-        s1_len=s1x1-s1x0
-        s2_len=s2x1-s2x0
-        return s1_len+s2_len-x_len
-    elif (s1x0>s2x0 and s1x0<s2x1) or (s1x1>s2x0 and s1x1<s2x1):
-        x=[]
-        x.append(s1x0)
-        x.append(s1x1)
-        x.append(s2x0)
-        x.append(s2x1)
-        x_len=max(x)-min(x)
-        s1_len=s1x1-s1x0
-        s2_len=s2x1-s2x0
-        return s1_len+s2_len-x_len
-    else:
-        return 0
-
-def is_rects_overlapping(rect1, rect2):
-    """
-    判断两个矩形是否无重合区域
-    
-    参数:
-        rect1: fitz.Rect 对象
-        rect2: fitz.Rect 对象
-    
-    返回:
-        1: 两个矩形有重合
-        0: 两个矩形无重合
-    """
-    r1s1=(rect1.x0,rect1.x1)
-    r1s2=(rect1.y0,rect1.y1)
-
-    r2s1=(rect2.x0,rect2.x1)
-    r2s2=(rect2.y0,rect2.y1)
-    
-    if is_segments_overlapping(r1s1,r2s1)>0.01 and is_segments_overlapping(r1s2,r2s2)>0.01:
-        overlapping_area=is_segments_overlapping(r1s1,r2s1)*is_segments_overlapping(r1s2,r2s2)
-        if overlapping_area/rect_area(rect1)>0.5 or overlapping_area/rect_area(rect2)>0.5:
-            return 1
-    return 0
-
-def rect_area(rect):
-    '''
-    计算矩形面积
-    '''
-    return abs(rect.x0-rect.x1)*abs(rect.y0-rect.y1)
-
-def add_text_block_rect_check(temp_rect, rect_lists):
-    '''
-    检查temp_rect和rect_lists里的元素有无冲突，
-    如果冲突，返回(1, [num1, num2, ...])，其中num1, num2等是冲突的rect的索引
-    如果temp_rect的面积小于任何一个冲突的rect，则返回(1, [])
-    如果temp_rect的面积大于所有冲突的rect，则返回(1, [num1, num2, ...])
-    返回(0, [])表示没有冲突
-    '''
-    if rect_lists == []:
-        return (0, [])
-    
-    overlapping_indices = []
-    temp_rect_area = rect_area(temp_rect)
-    
-    # 找出所有重叠的矩形
-    for i, rect in enumerate(rect_lists):
-        if is_rects_overlapping(temp_rect, rect):
-            overlapping_indices.append(i)
-    
-    # 如果没有重叠，返回(0, [])
-    if not overlapping_indices:
-        return (0, [])
-    
-    # 检查temp_rect是否比所有重叠的矩形都大
-    for idx in overlapping_indices:
-        if rect_area(rect_lists[idx]) >= temp_rect_area:
-            return (1, [])  # temp_rect不是最大的，返回空列表
-    
-    # temp_rect是最大的，返回所有重叠矩形的索引
-    return (1, overlapping_indices)
+from utils import get_resource_path, add_text_block_rect_check, rect_area
 
 def to_plain_block(block):
     '''
@@ -201,18 +48,6 @@ def is_tag_textbox(tag_str):
     else:
         return 0 
 
-def draw_custom_rect(page, rect, number):
-    # 定义三种颜色：红、绿、蓝
-    colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
-    # 根据编号选择颜色
-    color = colors[number % 3]
-    
-    # 绘制矩形框
-    page.draw_rect(rect, color=color, width=1.5)
-    
-    # 添加编号（使用相同的颜色）
-    page.insert_text((rect.x0-10, rect.y0 - 5), str(number), fontsize=8, color=color)
-
 def is_all_english_letters(text):
     return all('a' <= c <= 'z' or 'A' <= c <= 'Z' for c in text)
 
@@ -239,17 +74,14 @@ def baidu_translate(query):
         print(r.get('error_msg'))
         return 0
 
-def translate_pdf_ai(input_pdf_path,page_num=0):
-
+def translate_pdf_ai(input_pdf_path, page_num=0):
     #预处理（除了文字块外的所有处理）
     if ai_pdf_process(input_pdf_path, page_num) == False:
-        print('预处理失败！')
         return 0
     
     print("\n" + "="*50)
-    print("第二阶段：文字块处理")
+    print("第四步：文字块处理")
     print("="*50)
-
 
     with fitz.open('output/temp.pdf') as temp_pdf:
         with fitz.open(input_pdf_path) as input_pdf:
@@ -300,10 +132,7 @@ def translate_pdf_ai(input_pdf_path,page_num=0):
                             # 添加新的矩形
                             temp_page_text_block_rects.append(each_block_rect)
                 
-                # 添加编号计数器
-                rect_number = 0
                 for each_ready_rect in temp_page_text_block_rects:
-                    
                     #获取这个block的详细信息以获得字号
                     each_block_dict_blocks = (input_pdf_page.get_text("dict", clip=each_ready_rect))['blocks']
                     
@@ -337,8 +166,4 @@ def translate_pdf_ai(input_pdf_path,page_num=0):
                         
         output_path = f"{input_pdf_path}-中文翻译版.pdf"
         temp_pdf.save(output_path)
-    shutil.rmtree(os.path.join(os.getcwd(), 'output'))#删除output文件夹
-    print("\n" + "="*50)
-    print("全部完成！")
-    print("="*50)
     return output_path

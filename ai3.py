@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import json
 import fitz
 import torch
@@ -8,7 +9,6 @@ from doclayout_yolo import YOLOv10
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
-import os
 from pdf2image import convert_from_path # type: ignore
 from utils import get_resource_path
 
@@ -95,50 +95,58 @@ def analyze_document_layout(image_path, model_path, page_num,output_dir="output"
     3. 提取分块位置信息
     4. 保存JSON结果到output/json子目录
     """
-    # 初始化模型
-    model = YOLOv10(model_path)
+    try:
+        # 初始化模型
+        model = YOLOv10(model_path)
 
-    # 执行预测
-    det_res = model.predict(
-        image_path,
-        imgsz=1024,
-        conf=0.2,
-        device="cuda:0" if torch.cuda.is_available() else "cpu"  # 自动切换设备
-    )
+        # 执行预测（完全禁用任何可能的GUI输出）
+        det_res = model.predict(
+            image_path,
+            imgsz=1024,
+            conf=0.2,
+            device="cuda:0" if torch.cuda.is_available() else "cpu",  # 自动切换设备
+            show=False,  # 禁用显示
+            save=False,   # 禁用保存
+            verbose=False,  # 禁用详细输出
+            stream=False   # 禁用流式输出
+        )
 
-    # 提取检测结果
-    detections = det_res[0]
-    results = []
+        # 提取检测结果
+        detections = det_res[0]
+        results = []
 
-    # 解析每个检测到的元素
-    for det in detections:
-        # 获取边界框（绝对坐标和归一化坐标）
-        bbox = det.boxes.xyxy[0].tolist()       # [x1, y1, x2, y2] 像素坐标
-        bbox_norm = det.boxes.xyxyn[0].tolist() # [x1_norm, y1_norm, x2_norm, y2_norm] 归一化坐标
+        # 解析每个检测到的元素
+        for det in detections:
+            # 获取边界框（绝对坐标和归一化坐标）
+            bbox = det.boxes.xyxy[0].tolist()       # [x1, y1, x2, y2] 像素坐标
+            bbox_norm = det.boxes.xyxyn[0].tolist() # [x1_norm, y1_norm, x2_norm, y2_norm] 归一化坐标
+            
+            # 构建结果字典
+            result = {
+                "class": det.names[int(det.boxes.cls[0])],  # 类别名称
+                "class_id": int(det.boxes.cls[0]),          # 类别ID
+                "confidence": float(det.boxes.conf[0]),      # 置信度
+                "bbox_pixels": [round(x, 1) for x in bbox],  # 保留1位小数的像素坐标
+                "bbox_normalized": [round(x, 4) for x in bbox_norm],  # 归一化坐标
+                "width_pixels": round(bbox[2] - bbox[0], 1), # 区域宽度
+                "height_pixels": round(bbox[3] - bbox[1], 1)  # 区域高度
+            }
+            results.append(result)
+
+        # 创建输出目录和json子目录
+        json_dir = os.path.join(output_dir, "json")
+        os.makedirs(json_dir, exist_ok=True)
+
+        # 保存JSON结果到json子目录
+        json_path = os.path.join(json_dir, f"{page_num}.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+        print(f"检测结果已保存至: {json_path}")
         
-        # 构建结果字典
-        result = {
-            "class": det.names[int(det.boxes.cls[0])],  # 类别名称
-            "class_id": int(det.boxes.cls[0]),          # 类别ID
-            "confidence": float(det.boxes.conf[0]),      # 置信度
-            "bbox_pixels": [round(x, 1) for x in bbox],  # 保留1位小数的像素坐标
-            "bbox_normalized": [round(x, 4) for x in bbox_norm],  # 归一化坐标
-            "width_pixels": round(bbox[2] - bbox[0], 1), # 区域宽度
-            "height_pixels": round(bbox[3] - bbox[1], 1)  # 区域高度
-        }
-        results.append(result)
-
-    # 创建输出目录和json子目录
-    json_dir = os.path.join(output_dir, "json")
-    os.makedirs(json_dir, exist_ok=True)
-
-    # 保存JSON结果到json子目录
-    json_path = os.path.join(json_dir, f"{page_num}.json")
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-    print(f"检测结果已保存至: {json_path}")
-    
-    return json_path
+        return json_path
+    except Exception as e:
+        print(f"布局分析出错: {str(e)}")
+        return None
 
 def generate_clean_pdf(image_paths, json_paths, output_pdf, original_pdf_path=None):
     """
@@ -256,10 +264,6 @@ def process_pdf_to_final_pdf(pdf_path, model_path, output_dir="output", dpi=300,
     print("="*50)
     final_pdf = os.path.join(output_dir, "temp.pdf")
     generate_clean_pdf(image_paths, json_paths, final_pdf, original_pdf_path=pdf_path)
-    
-    print("\n" + "="*50)
-    print("预处理完成！")
-    print("="*50)
     
     return True
 
