@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=pat
+Comment=pdf advanced translator
+Exec=/opt/pat/mini-GUI
+Icon=/opt/pat/logo.png
+Terminal=false
+Type=Application
+Categories=Application;
